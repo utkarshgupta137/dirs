@@ -1,15 +1,18 @@
+extern crate dirs_sys;
+
 use std::path::PathBuf;
 
-use crate::BaseDirs;
-use crate::ProjectDirs;
-use crate::UserDirs;
+use BaseDirs;
+use ProjectDirs;
+use UserDirs;
 
 pub fn base_dirs() -> Option<BaseDirs> {
     if let Some(home_dir) = dirs_sys_next::home_dir() {
         let cache_dir = home_dir.join("Library/Caches");
         let config_dir = home_dir.join("Library/Application Support");
-        let data_dir = config_dir.clone();
+        let data_dir = home_dir.join("Library/Application Support");
         let data_local_dir = data_dir.clone();
+        let preference_dir = home_dir.join("Library/Preferences");
 
         let base_dirs = BaseDirs {
             home_dir,
@@ -18,7 +21,9 @@ pub fn base_dirs() -> Option<BaseDirs> {
             data_dir,
             data_local_dir,
             executable_dir: None,
+            preference_dir,
             runtime_dir: None,
+            state_dir: None,
         };
         Some(base_dirs)
     } else {
@@ -59,11 +64,22 @@ pub fn project_dirs_from_path(project_path: PathBuf) -> Option<ProjectDirs> {
     if let Some(home_dir) = dirs_sys_next::home_dir() {
         let cache_dir = home_dir.join("Library/Caches").join(&project_path);
         let config_dir = home_dir.join("Library/Application Support").join(&project_path);
-        let data_dir = config_dir.clone();
+        let config_local_dir = config_dir.clone();
+        let data_dir = home_dir.join("Library/Application Support").join(&project_path);
         let data_local_dir = data_dir.clone();
+        let preference_dir = home_dir.join("Library/Preferences").join(&project_path);
 
-        let project_dirs =
-            ProjectDirs { project_path, cache_dir, config_dir, data_dir, data_local_dir, runtime_dir: None };
+        let project_dirs = ProjectDirs {
+            project_path,
+            cache_dir,
+            config_dir,
+            config_local_dir,
+            data_dir,
+            data_local_dir,
+            preference_dir,
+            runtime_dir: None,
+            state_dir: None,
+        };
         Some(project_dirs)
     } else {
         None

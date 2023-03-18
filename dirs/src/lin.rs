@@ -1,9 +1,12 @@
+extern crate dirs_sys;
+
 use std::env;
 use std::path::PathBuf;
 
 pub fn home_dir() -> Option<PathBuf> {
     dirs_sys_next::home_dir()
 }
+
 pub fn cache_dir() -> Option<PathBuf> {
     env::var_os("XDG_CACHE_HOME")
         .and_then(dirs_sys_next::is_absolute_path)
@@ -22,18 +25,23 @@ pub fn data_dir() -> Option<PathBuf> {
 pub fn data_local_dir() -> Option<PathBuf> {
     data_dir()
 }
+pub fn preference_dir() -> Option<PathBuf> {
+    config_dir()
+}
 pub fn runtime_dir() -> Option<PathBuf> {
     env::var_os("XDG_RUNTIME_DIR").and_then(dirs_sys_next::is_absolute_path)
 }
-pub fn executable_dir() -> Option<PathBuf> {
-    env::var_os("XDG_BIN_HOME").and_then(dirs_sys_next::is_absolute_path).or_else(|| {
-        data_dir().map(|mut e| {
-            e.pop();
-            e.push("bin");
-            e
-        })
-    })
+pub fn state_dir() -> Option<PathBuf> {
+    env::var_os("XDG_STATE_HOME")
+        .and_then(dirs_sys_next::is_absolute_path)
+        .or_else(|| home_dir().map(|h| h.join(".local/state")))
 }
+pub fn executable_dir() -> Option<PathBuf> {
+    env::var_os("XDG_BIN_HOME")
+        .and_then(dirs_sys_next::is_absolute_path)
+        .or_else(|| home_dir().map(|h| h.join(".local/bin")))
+}
+
 pub fn audio_dir() -> Option<PathBuf> {
     dirs_sys_next::user_dir("MUSIC")
 }
@@ -66,7 +74,7 @@ pub fn video_dir() -> Option<PathBuf> {
 mod tests {
     #[test]
     fn test_file_user_dirs_exists() {
-        let user_dirs_file = crate::config_dir().unwrap().join("user-dirs.dirs");
+        let user_dirs_file = ::config_dir().unwrap().join("user-dirs.dirs");
         println!("{:?} exists: {:?}", user_dirs_file, user_dirs_file.exists());
     }
 }

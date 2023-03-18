@@ -1,9 +1,11 @@
+extern crate dirs_sys;
+
 use std::env;
 use std::path::PathBuf;
 
-use crate::BaseDirs;
-use crate::ProjectDirs;
-use crate::UserDirs;
+use BaseDirs;
+use ProjectDirs;
+use UserDirs;
 
 pub fn base_dirs() -> Option<BaseDirs> {
     if let Some(home_dir) = dirs_sys_next::home_dir() {
@@ -17,14 +19,14 @@ pub fn base_dirs() -> Option<BaseDirs> {
             .and_then(dirs_sys_next::is_absolute_path)
             .unwrap_or_else(|| home_dir.join(".local/share"));
         let data_local_dir = data_dir.clone();
+        let preference_dir = config_dir.clone();
         let runtime_dir = env::var_os("XDG_RUNTIME_DIR").and_then(dirs_sys_next::is_absolute_path);
-        let executable_dir =
-            env::var_os("XDG_BIN_HOME").and_then(dirs_sys_next::is_absolute_path).unwrap_or_else(|| {
-                let mut new_dir = data_dir.clone();
-                new_dir.pop();
-                new_dir.push("bin");
-                new_dir
-            });
+        let state_dir = env::var_os("XDG_STATE_HOME")
+            .and_then(dirs_sys_next::is_absolute_path)
+            .unwrap_or_else(|| home_dir.join(".local/state"));
+        let executable_dir = env::var_os("XDG_BIN_HOME")
+            .and_then(dirs_sys_next::is_absolute_path)
+            .unwrap_or_else(|| home_dir.join(".local/bin"));
 
         let base_dirs = BaseDirs {
             home_dir,
@@ -33,7 +35,9 @@ pub fn base_dirs() -> Option<BaseDirs> {
             data_dir,
             data_local_dir,
             executable_dir: Some(executable_dir),
+            preference_dir,
             runtime_dir,
+            state_dir: Some(state_dir),
         };
         Some(base_dirs)
     } else {
@@ -77,15 +81,31 @@ pub fn project_dirs_from_path(project_path: PathBuf) -> Option<ProjectDirs> {
             .and_then(dirs_sys_next::is_absolute_path)
             .unwrap_or_else(|| home_dir.join(".config"))
             .join(&project_path);
+        let config_local_dir = config_dir.clone();
         let data_dir = env::var_os("XDG_DATA_HOME")
             .and_then(dirs_sys_next::is_absolute_path)
             .unwrap_or_else(|| home_dir.join(".local/share"))
             .join(&project_path);
         let data_local_dir = data_dir.clone();
+        let preference_dir = config_dir.clone();
         let runtime_dir =
             env::var_os("XDG_RUNTIME_DIR").and_then(dirs_sys_next::is_absolute_path).map(|o| o.join(&project_path));
+        let state_dir = env::var_os("XDG_STATE_HOME")
+            .and_then(dirs_sys_next::is_absolute_path)
+            .unwrap_or_else(|| home_dir.join(".local/state"))
+            .join(&project_path);
 
-        let project_dirs = ProjectDirs { project_path, cache_dir, config_dir, data_dir, data_local_dir, runtime_dir };
+        let project_dirs = ProjectDirs {
+            project_path,
+            cache_dir,
+            config_dir,
+            config_local_dir,
+            data_dir,
+            data_local_dir,
+            preference_dir,
+            runtime_dir,
+            state_dir: Some(state_dir),
+        };
         Some(project_dirs)
     } else {
         None
@@ -114,7 +134,7 @@ fn trim_and_lowercase_then_replace_spaces(name: &str, replacement: &str) -> Stri
 
 #[cfg(test)]
 mod tests {
-    use super::trim_and_lowercase_then_replace_spaces;
+    use lin::trim_and_lowercase_then_replace_spaces;
 
     #[test]
     fn test_trim_and_lowercase_then_replace_spaces() {
@@ -141,7 +161,7 @@ mod tests {
 
     #[test]
     fn test_file_user_dirs_exists() {
-        let base_dirs = crate::BaseDirs::new();
+        let base_dirs = ::BaseDirs::new();
         let user_dirs_file = base_dirs.unwrap().config_dir().join("user-dirs.dirs");
         println!("{:?} exists: {:?}", user_dirs_file, user_dirs_file.exists());
     }

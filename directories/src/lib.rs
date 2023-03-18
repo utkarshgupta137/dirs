@@ -13,23 +13,26 @@
 //!
 
 #![deny(missing_docs)]
-#![warn(rust_2018_idioms)]
-
-#[cfg(windows)]
-#[path = "win.rs"]
-mod sys;
-#[cfg(any(target_os = "macos", target_os = "ios"))]
-#[path = "mac.rs"]
-mod sys;
-#[cfg(target_arch = "wasm32")]
-#[path = "wasm.rs"]
-mod sys;
-#[cfg(not(any(target_arch = "wasm32", windows, target_os = "macos", target_os = "ios")))]
-#[path = "lin.rs"]
-mod sys;
 
 use std::path::Path;
 use std::path::PathBuf;
+
+#[cfg(target_os = "windows")]
+mod win;
+#[cfg(target_os = "windows")]
+use win as sys;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod mac;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+use mac as sys;
+#[cfg(target_arch = "wasm32")]
+mod wasm;
+#[cfg(target_arch = "wasm32")]
+use wasm as sys;
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_arch = "wasm32")))]
+mod lin;
+#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_arch = "wasm32")))]
+use lin as sys;
 
 /// `BaseDirs` provides paths of user-invisible standard directories, following the conventions of the operating system the library is running on.
 ///
@@ -59,7 +62,9 @@ pub struct BaseDirs {
     data_dir: PathBuf,
     data_local_dir: PathBuf,
     executable_dir: Option<PathBuf>,
+    preference_dir: PathBuf,
     runtime_dir: Option<PathBuf>,
+    state_dir: Option<PathBuf>,
 }
 
 /// `UserDirs` provides paths of user-facing standard directories, following the conventions of the operating system the library is running on.
@@ -119,9 +124,12 @@ pub struct ProjectDirs {
     // base directories
     cache_dir: PathBuf,
     config_dir: PathBuf,
+    config_local_dir: PathBuf,
     data_dir: PathBuf,
     data_local_dir: PathBuf,
+    preference_dir: PathBuf,
     runtime_dir: Option<PathBuf>,
+    state_dir: Option<PathBuf>,
 }
 
 impl BaseDirs {
@@ -175,11 +183,11 @@ impl BaseDirs {
     }
     /// Returns the path to the user's config directory.
     ///
-    /// |Platform | Value                                 | Example                          |
-    /// | ------- | ------------------------------------- | -------------------------------- |
-    /// | Linux   | `$XDG_CONFIG_HOME` or `$HOME`/.config | /home/alice/.config              |
+    /// |Platform | Value                                 | Example                                  |
+    /// | ------- | ------------------------------------- | ---------------------------------------- |
+    /// | Linux   | `$XDG_CONFIG_HOME` or `$HOME`/.config | /home/alice/.config                      |
     /// | macOS   | `$HOME`/Library/Application Support   | /Users/Alice/Library/Application Support |
-    /// | Windows | `{FOLDERID_RoamingAppData}`           | C:\Users\Alice\AppData\Roaming   |
+    /// | Windows | `{FOLDERID_RoamingAppData}`           | C:\Users\Alice\AppData\Roaming           |
     pub fn config_dir(&self) -> &Path {
         self.config_dir.as_path()
     }
@@ -213,6 +221,16 @@ impl BaseDirs {
     pub fn executable_dir(&self) -> Option<&Path> {
         self.executable_dir.as_ref().map(|p| p.as_path())
     }
+    /// Returns the path to the user's preference directory.
+    ///
+    /// |Platform | Value                                 | Example                          |
+    /// | ------- | ------------------------------------- | -------------------------------- |
+    /// | Linux   | `$XDG_CONFIG_HOME` or `$HOME`/.config | /home/alice/.config              |
+    /// | macOS   | `$HOME`/Library/Preferences           | /Users/Alice/Library/Preferences |
+    /// | Windows | `{FOLDERID_RoamingAppData}`           | C:\Users\Alice\AppData\Roaming   |
+    pub fn preference_dir(&self) -> &Path {
+        self.preference_dir.as_path()
+    }
     /// Returns the path to the user's runtime directory.
     ///
     /// |Platform | Value              | Example         |
@@ -222,6 +240,22 @@ impl BaseDirs {
     /// | Windows | –                  | –               |
     pub fn runtime_dir(&self) -> Option<&Path> {
         self.runtime_dir.as_ref().map(|p| p.as_path())
+    }
+    /// Returns the path to the user's state directory.
+    ///
+    /// The state directory contains data that should be retained between sessions (unlike the runtime
+    /// directory), but may not be important/portable enough to be synchronized across machines (unlike
+    /// the config/preferences/data directories).
+    ///
+    /// The returned value depends on the operating system and is either a `Some`, containing a value from the following table, or a `None`.
+    ///
+    /// |Platform | Value                                     | Example                  |
+    /// | ------- | ----------------------------------------- | ------------------------ |
+    /// | Linux   | `$XDG_STATE_HOME` or `$HOME`/.local/state | /home/alice/.local/state |
+    /// | macOS   | –                                         | –                        |
+    /// | Windows | –                                         | –                        |
+    pub fn state_dir(&self) -> Option<&Path> {
+        self.state_dir.as_ref().map(|p| p.as_path())
     }
 }
 
@@ -392,13 +426,23 @@ impl ProjectDirs {
     }
     /// Returns the path to the project's config directory.
     ///
-    /// |Platform | Value                                                                   | Example                                                |
-    /// | ------- | ----------------------------------------------------------------------- | ------------------------------------------------------ |
-    /// | Linux   | `$XDG_CONFIG_HOME`/`_project_path_` or `$HOME`/.config/`_project_path_` | /home/alice/.config/barapp                             |
+    /// |Platform | Value                                                                   | Example                                                        |
+    /// | ------- | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
+    /// | Linux   | `$XDG_CONFIG_HOME`/`_project_path_` or `$HOME`/.config/`_project_path_` | /home/alice/.config/barapp                                     |
     /// | macOS   | `$HOME`/Library/Application Support/`_project_path_`                    | /Users/Alice/Library/Application Support/com.Foo-Corp.Bar-App  |
-    /// | Windows | `{FOLDERID_RoamingAppData}`\\`_project_path_`\\config                   | C:\Users\Alice\AppData\Roaming\Foo Corp\Bar App\config |
+    /// | Windows | `{FOLDERID_RoamingAppData}`\\`_project_path_`\\config                   | C:\Users\Alice\AppData\Roaming\Foo Corp\Bar App\config         |
     pub fn config_dir(&self) -> &Path {
         self.config_dir.as_path()
+    }
+    /// Returns the path to the project's local config directory.
+    ///
+    /// |Platform | Value                                                                   | Example                                                        |
+    /// | ------- | ----------------------------------------------------------------------- | -------------------------------------------------------------- |
+    /// | Linux   | `$XDG_CONFIG_HOME`/`_project_path_` or `$HOME`/.config/`_project_path_` | /home/alice/.config/barapp                                     |
+    /// | macOS   | `$HOME`/Library/Application Support/`_project_path_`                    | /Users/Alice/Library/Application Support/com.Foo-Corp.Bar-App  |
+    /// | Windows | `{FOLDERID_LocalAppData}`\\`_project_path_`\\config                     | C:\Users\Alice\AppData\Local\Foo Corp\Bar App\config           |
+    pub fn config_local_dir(&self) -> &Path {
+        self.config_local_dir.as_path()
     }
     /// Returns the path to the project's data directory.
     ///
@@ -420,7 +464,20 @@ impl ProjectDirs {
     pub fn data_local_dir(&self) -> &Path {
         self.data_local_dir.as_path()
     }
+    /// Returns the path to the project's preference directory.
+    ///
+    /// |Platform | Value                                                                   | Example                                                |
+    /// | ------- | ----------------------------------------------------------------------- | ------------------------------------------------------ |
+    /// | Linux   | `$XDG_CONFIG_HOME`/`_project_path_` or `$HOME`/.config/`_project_path_` | /home/alice/.config/barapp                             |
+    /// | macOS   | `$HOME`/Library/Preferences/`_project_path_`                            | /Users/Alice/Library/Preferences/com.Foo-Corp.Bar-App  |
+    /// | Windows | `{FOLDERID_RoamingAppData}`\\`_project_path_`\\config                   | C:\Users\Alice\AppData\Roaming\Foo Corp\Bar App\config |
+    pub fn preference_dir(&self) -> &Path {
+        self.preference_dir.as_path()
+    }
     /// Returns the path to the project's runtime directory.
+    ///
+    /// The runtime directory contains transient, non-essential data (like sockets or named pipes) that
+    /// is expected to be cleared when the user's session ends.
     ///
     /// |Platform | Value                               | Example               |
     /// | ------- | ----------------------------------- | --------------------- |
@@ -430,27 +487,43 @@ impl ProjectDirs {
     pub fn runtime_dir(&self) -> Option<&Path> {
         self.runtime_dir.as_ref().map(|p| p.as_path())
     }
+    /// Returns the path to the project's state directory.
+    ///
+    /// The state directory contains data that should be retained between sessions (unlike the runtime
+    /// directory), but may not be important/portable enough to be synchronized across machines (unlike
+    /// the config/preferences/data directories).
+    ///
+    /// The returned value depends on the operating system and is either a `Some`, containing a value from the following table, or a `None`.
+    ///
+    /// |Platform | Value                                                                       | Example                         |
+    /// | ------- | --------------------------------------------------------------------------- | ------------------------------- |
+    /// | Linux   | `$XDG_STATE_HOME`/`_project_path_` or `$HOME`/.local/state/`_project_path_` | /home/alice/.local/state/barapp |
+    /// | macOS   | –                                                                           | –                               |
+    /// | Windows | –                                                                           | –                               |
+    pub fn state_dir(&self) -> Option<&Path> {
+        self.state_dir.as_ref().map(|p| p.as_path())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     #[test]
     fn test_base_dirs() {
-        println!("BaseDirs::new())\n{:?}", crate::BaseDirs::new());
+        println!("BaseDirs::new())\n{:?}", ::BaseDirs::new());
     }
 
     #[test]
     fn test_user_dirs() {
-        println!("UserDirs::new())\n{:?}", crate::UserDirs::new());
+        println!("UserDirs::new())\n{:?}", ::UserDirs::new());
     }
 
     #[test]
     fn test_project_dirs() {
-        let proj_dirs = crate::ProjectDirs::from("qux", "FooCorp", "BarApp");
+        let proj_dirs = ::ProjectDirs::from("qux", "FooCorp", "BarApp");
         println!("ProjectDirs::from(\"qux\", \"FooCorp\", \"BarApp\")\n{:?}", proj_dirs);
-        let proj_dirs = crate::ProjectDirs::from("qux.zoo", "Foo Corp", "Bar-App");
+        let proj_dirs = ::ProjectDirs::from("qux.zoo", "Foo Corp", "Bar-App");
         println!("ProjectDirs::from(\"qux.zoo\", \"Foo Corp\", \"Bar-App\")\n{:?}", proj_dirs);
-        let proj_dirs = crate::ProjectDirs::from("com", "Foo Corp.", "Bar App");
+        let proj_dirs = ::ProjectDirs::from("com", "Foo Corp.", "Bar App");
         println!("ProjectDirs::from(\"com\", \"Foo Corp.\", \"Bar App\")\n{:?}", proj_dirs);
     }
 }

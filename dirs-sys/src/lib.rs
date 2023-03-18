@@ -1,5 +1,3 @@
-#![warn(rust_2018_idioms)]
-
 use std::ffi::OsString;
 use std::path::PathBuf;
 
@@ -15,6 +13,9 @@ pub fn is_absolute_path(path: OsString) -> Option<PathBuf> {
 }
 
 #[cfg(all(unix, not(target_os = "redox")))]
+extern crate libc;
+
+#[cfg(all(unix, not(target_os = "redox")))]
 mod target_unix_not_redox {
 
     use std::env;
@@ -24,7 +25,9 @@ mod target_unix_not_redox {
     use std::path::PathBuf;
     use std::ptr;
 
-    // https://github.com/rust-lang/rust/blob/ef3e3863939217678e5f7e755c4234d224107c64/library/std/src/sys/unix/os.rs#L587
+    use super::libc;
+
+    // https://github.com/rust-lang/rust/blob/2682b88c526d493edeb2d3f2df358f44db69b73f/library/std/src/sys/unix/os.rs#L595
     pub fn home_dir() -> Option<PathBuf> {
         return env::var_os("HOME")
             .and_then(|h| if h.is_empty() { None } else { Some(h) })
@@ -64,11 +67,14 @@ mod target_unix_not_redox {
 pub use self::target_unix_not_redox::home_dir;
 
 #[cfg(target_os = "redox")]
+extern crate redox_users;
+
+#[cfg(target_os = "redox")]
 mod target_redox {
 
     use std::path::PathBuf;
 
-    use redox_users::{All, AllUsers, Config};
+    use super::redox_users::{All, AllUsers, Config};
 
     pub fn home_dir() -> Option<PathBuf> {
         let current_uid = redox_users::get_uid().ok()?;
@@ -105,14 +111,14 @@ mod target_unix_not_mac {
     // this could be optimized further to not create a map and instead retrieve the requested path only
     pub fn user_dir(user_dir_name: &str) -> Option<PathBuf> {
         if let Some(home_dir) = home_dir() {
-            xdg_user_dirs::single(&home_dir, &user_dir_file(&home_dir), user_dir_name).remove(user_dir_name)
+            xdg_user_dirs_next::single(&home_dir, &user_dir_file(&home_dir), user_dir_name).remove(user_dir_name)
         } else {
             None
         }
     }
 
     pub fn user_dirs(home_dir_path: &Path) -> HashMap<String, PathBuf> {
-        xdg_user_dirs::all(home_dir_path, &user_dir_file(home_dir_path))
+        xdg_user_dirs_next::all(home_dir_path, &user_dir_file(home_dir_path))
     }
 }
 
@@ -120,73 +126,78 @@ mod target_unix_not_mac {
 pub use self::target_unix_not_mac::{user_dir, user_dirs};
 
 #[cfg(target_os = "windows")]
+extern crate windows_sys as windows;
+
+#[cfg(target_os = "windows")]
 mod target_windows {
 
+    use std::ffi::c_void;
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
     use std::path::PathBuf;
-    use std::ptr;
     use std::slice;
 
-    use winapi::shared::winerror;
-    use winapi::um::{combaseapi, knownfolders, shlobj, shtypes, winbase, winnt};
+    use super::windows::Win32;
+    use super::windows::Win32::UI::Shell;
 
-    pub fn known_folder(folder_id: shtypes::REFKNOWNFOLDERID) -> Option<PathBuf> {
+    pub fn known_folder(folder_id: windows::core::GUID) -> Option<PathBuf> {
         unsafe {
-            let mut path_ptr: winnt::PWSTR = ptr::null_mut();
-            let result = shlobj::SHGetKnownFolderPath(folder_id, 0, ptr::null_mut(), &mut path_ptr);
-            if result == winerror::S_OK {
-                let len = winbase::lstrlenW(path_ptr) as usize;
+            let mut path_ptr: windows::core::PWSTR = std::ptr::null_mut();
+            let result =
+                Shell::SHGetKnownFolderPath(&folder_id, 0, Win32::Foundation::HANDLE::default(), &mut path_ptr);
+            if result == 0 {
+                let len = windows::Win32::Globalization::lstrlenW(path_ptr) as usize;
                 let path = slice::from_raw_parts(path_ptr, len);
                 let ostr: OsString = OsStringExt::from_wide(path);
-                combaseapi::CoTaskMemFree(path_ptr as *mut winapi::ctypes::c_void);
+                windows::Win32::System::Com::CoTaskMemFree(path_ptr as *const c_void);
                 Some(PathBuf::from(ostr))
             } else {
+                windows::Win32::System::Com::CoTaskMemFree(path_ptr as *const c_void);
                 None
             }
         }
     }
 
     pub fn known_folder_profile() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_Profile)
+        known_folder(Shell::FOLDERID_Profile)
     }
 
     pub fn known_folder_roaming_app_data() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_RoamingAppData)
+        known_folder(Shell::FOLDERID_RoamingAppData)
     }
 
     pub fn known_folder_local_app_data() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_LocalAppData)
+        known_folder(Shell::FOLDERID_LocalAppData)
     }
 
     pub fn known_folder_music() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_Music)
+        known_folder(Shell::FOLDERID_Music)
     }
 
     pub fn known_folder_desktop() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_Desktop)
+        known_folder(Shell::FOLDERID_Desktop)
     }
 
     pub fn known_folder_documents() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_Documents)
+        known_folder(Shell::FOLDERID_Documents)
     }
 
     pub fn known_folder_downloads() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_Downloads)
+        known_folder(Shell::FOLDERID_Downloads)
     }
 
     pub fn known_folder_pictures() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_Pictures)
+        known_folder(Shell::FOLDERID_Pictures)
     }
 
     pub fn known_folder_public() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_Public)
+        known_folder(Shell::FOLDERID_Public)
     }
     pub fn known_folder_templates() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_Templates)
+        known_folder(Shell::FOLDERID_Templates)
     }
     pub fn known_folder_videos() -> Option<PathBuf> {
-        known_folder(&knownfolders::FOLDERID_Videos)
+        known_folder(Shell::FOLDERID_Videos)
     }
 }
 
